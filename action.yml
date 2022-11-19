@@ -1,0 +1,63 @@
+name: "Semantic Version Convention"
+description: "Trip Teknologi's Semantic Version Convention"
+author: "Trip Teknologi"
+inputs:
+  token:
+    required: true
+    description: "Token"
+  artifact:
+    required: true
+    description: "Target of Version Artifact"
+outputs:
+  exists:
+    value: ${{ steps.exists.outputs.exists }}
+    description: "State existed of Artifact"
+  version:
+    value: ${{ steps.version.outputs.version }}
+    description: "Version of Artifact"
+  passes:
+    value: ${{ steps.passes.outputs.passes }}
+    description: "State passed of Artifact"
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    - uses: wagoid/commitlint-github-action@v5
+    - id: exists
+      shell: sh
+      run: |
+        if [ -e ${{ inputs.artifact }} ]
+        then
+          echo exists=true 1>> $GITHUB_OUTPUT
+        else
+          echo exists=false 1>> $GITHUB_OUTPUT
+        fi
+    - id: version
+      if: ${{ steps.exists.outputs.exists == 'true' }}
+      shell: sh
+      run: echo version=$(fgrep -m 1 "version" ${{ inputs.artifact }} | sed "s/[ \"\',:=]//g;s/^version//") 1>> $GITHUB_OUTPUT
+    - id: passes
+      if: ${{ steps.version.outputs.version }}
+      shell: sh
+      run: |
+        git fetch --all --tags
+        versions=$(git tag -l)
+        currentversion=${{ steps.version.outputs.version }}
+        if [ ! $(printf "$versions" | egrep $(echo "^"$currentversion"$")) ]
+        then
+          echo passes=true 1>> $GITHUB_OUTPUT
+        else
+          echo passes=false 1>> $GITHUB_OUTPUT
+        fi
+    - uses: actions/create-release@v1
+      if: ${{ steps.passes.outputs.passes == 'true' }}
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+      with:
+        tag_name: ${{ steps.version.outputs.version }}
+        release_name: ${{ steps.version.outputs.version }}
+        body: ${{ github.event.head_commit.message }}
+        draft: false
+        prerelease: false
